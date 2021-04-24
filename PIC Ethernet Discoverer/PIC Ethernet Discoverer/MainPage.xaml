@@ -14,5 +14,24 @@
                 <Label Text="PIC ETHERNET DISCOVERER" HorizontalTextAlignment="Center" TextColor="White" FontSize="Medium" FontAttributes="Bold" />
             </StackLayout>
         </Frame>
+
+        <Label x:Name="LabelWifiStatus" Padding="10" HorizontalTextAlignment="Center"/>
+
+        <Button x:Name="ButtonFindDevices" Text="Find devices on the network" Clicked="ButtonFindDevices_Clicked" HeightRequest="100"/>
+
+        <ListView x:Name="ListViewDiscoveredDevices" RowHeight="100" Margin="10"
+                  ItemsSource="{Binding ListOfDiscoveredDevices}" ItemTapped="ListViewDiscoveredDevices_ItemTapped">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <ViewCell>
+                        <StackLayout Padding="10">
+                            <Label Text="{Binding Hostname}" FontAttributes="Bold" FontSize="Large" Padding="0, 0, -5, 0"/>
+                            <Label Text="{Binding IP}"       FontSize="Small"/>
+                            <Label Text="{Binding MAC}"      FontSize="Small"/>
+                        </StackLayout>
+                    </ViewCell>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
     </StackLayout>
 </ContentPage>
