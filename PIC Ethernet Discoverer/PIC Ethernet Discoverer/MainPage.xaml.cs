@@ -1,9 +1,9 @@
-﻿using PIC_Ethernet_Discoverer.Models;
+﻿using System.Text.RegularExpressions;
+using PIC_Ethernet_Discoverer.Models;
 using System.Collections.ObjectModel;
-using System.Text.RegularExpressions;
 using System.ComponentModel;
-using System.Net.Sockets;
 using Xamarin.Essentials;
+using System.Net.Sockets;
 using Xamarin.Forms;
 using System.Linq;
 using System.Text;
@@ -12,7 +12,7 @@ using System;
 
 namespace PIC_Ethernet_Discoverer
 {
-    public partial class MainPage : ContentPage
+    public partial class MainPage : ContentPage, INotifyPropertyChanged
     {
         private ObservableCollection<DiscoveredDevice> _listOfDiscoveredDevices = new ObservableCollection<DiscoveredDevice>();
         public ObservableCollection<DiscoveredDevice> ListOfDiscoveredDevices
@@ -21,21 +21,12 @@ namespace PIC_Ethernet_Discoverer
             set { _listOfDiscoveredDevices = value; OnPropertyChanged(nameof(ListOfDiscoveredDevices)); }
         }
 
-        // Microchip PICs are usually set to receive the discovery message on port 30303
-        private const int PICListeningPort = 30303;
-
-        private const string BroadcastIPAddress = "255.255.255.255";
-        private const string DiscoveryMessage = "Who's there?";
-        private readonly byte[] DiscoveryMessageBytes; 
-
         private UdpState GlobalUDP;
 
         public MainPage()
         {
             InitializeComponent();
             this.BindingContext = this;
-
-            DiscoveryMessageBytes = Encoding.ASCII.GetBytes(DiscoveryMessage);
             InitializeApp();
             CheckWiFi();
         }
@@ -43,21 +34,7 @@ namespace PIC_Ethernet_Discoverer
         private void InitializeApp()
         {
             Connectivity.ConnectivityChanged += ConnectivityChanged;
-
             ButtonFindDevices.IsEnabled = false;
-
-            GlobalUDP.UDPClient = new UdpClient();
-            GlobalUDP.EP = new IPEndPoint(IPAddress.Parse(BroadcastIPAddress), PICListeningPort);
-            IPEndPoint BindEP = new IPEndPoint(IPAddress.Any, PICListeningPort);
-
-            // UDP listening port
-            GlobalUDP.UDPClient.Client.Bind(BindEP);
-
-            GlobalUDP.UDPClient.EnableBroadcast = true;
-            GlobalUDP.UDPClient.MulticastLoopback = false;
-
-            // Configures listening for the response
-            GlobalUDP.UDPClient.BeginReceive(ReceiveCallback, GlobalUDP);
         }
 
         private void CheckWiFi()
@@ -69,7 +46,7 @@ namespace PIC_Ethernet_Discoverer
                 LabelWifiStatus.TextColor = Color.GreenYellow;
                 ButtonFindDevices.IsEnabled = true;
 
-                SendDiscoveryMessage();
+                InitialDiscover();
             }
             else
             {
@@ -80,23 +57,37 @@ namespace PIC_Ethernet_Discoverer
             }
         }
 
-        private void SendDiscoveryMessage()
+        private void SearchDevices()
         {
             ListOfDiscoveredDevices.Clear();
 
             Vibration.Vibrate(TimeSpan.FromMilliseconds(50));
+            byte[] DiscoverMsg = Encoding.ASCII.GetBytes("Discovery message.");
+            GlobalUDP.UDPClient.Send(DiscoverMsg, DiscoverMsg.Length, new IPEndPoint(IPAddress.Parse("255.255.255.255"), 30303));
+        }
 
-            GlobalUDP.UDPClient.Send(
-                    DiscoveryMessageBytes,
-                    DiscoveryMessageBytes.Length,
-                    new IPEndPoint(IPAddress.Parse(BroadcastIPAddress), PICListeningPort));
+        #region UDP
+
+        private void InitialDiscover()
+        {
+            ListOfDiscoveredDevices.Clear();
+
+            GlobalUDP.UDPClient = new UdpClient();
+            GlobalUDP.EP = new IPEndPoint(IPAddress.Parse("255.255.255.255"), 30303);
+            IPEndPoint BindEP = new IPEndPoint(IPAddress.Any, 30303);
+            byte[] DiscoverMsg = Encoding.ASCII.GetBytes("Discovery message.");
+
+            GlobalUDP.UDPClient.Client.Bind(BindEP);
+            GlobalUDP.UDPClient.EnableBroadcast = true;
+            GlobalUDP.UDPClient.MulticastLoopback = false;
+            GlobalUDP.UDPClient.BeginReceive(ReceiveCallback, GlobalUDP);
+            GlobalUDP.UDPClient.Send(DiscoverMsg, DiscoverMsg.Length, new IPEndPoint(IPAddress.Parse("255.255.255.255"), 30303));
         }
 
         public void ReceiveCallback(IAsyncResult ar)
         {
             UdpState MyUDP = (UdpState)ar.AsyncState;
 
-            // Splits the response message string into Hostname, IP and MAC addresses
             string[] ReceivedLines = Regex.Split(Encoding.ASCII.GetString(MyUDP.UDPClient.EndReceive(ar, ref MyUDP.EP)), "\r\n");
 
             if (ReceivedLines.Length == 3)
@@ -112,7 +103,6 @@ namespace PIC_Ethernet_Discoverer
                 });
             }
 
-            // Configures the UDP client for receiving further messages
             MyUDP.UDPClient.BeginReceive(ReceiveCallback, MyUDP);
         }
 
@@ -122,22 +112,20 @@ namespace PIC_Ethernet_Discoverer
             public UdpClient UDPClient;
         }
 
+        #endregion
+
         private void ConnectivityChanged(object sender, ConnectivityChangedEventArgs e) => CheckWiFi();
-
-        private void ButtonFindDevices_Clicked(object sender, EventArgs e) => SendDiscoveryMessage();
-
+        private void ButtonFindDevices_Clicked(object sender, EventArgs e) => SearchDevices();
         private void ImageLogo_Tapped(object sender, EventArgs e) => Launcher.OpenAsync(new Uri("https://github.com/burneech/PIC-Ethernet-Discoverer"));
-
         private void ListViewDiscoveredDevices_ItemTapped(object sender, ItemTappedEventArgs e)
         {
             var tappedItem = e.Item as DiscoveredDevice;
             if (tappedItem == null)
                 return;
-
             Launcher.OpenAsync(new Uri($"http://{tappedItem.IP}"));
         }
 
-        #region INotify
+        #region INotify stuff
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged(string propertyName)
         {
